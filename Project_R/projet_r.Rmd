@@ -1,0 +1,481 @@
+---
+author: "Ibrahim Souleymane Amadou"
+date: "2023-07-19"
+output: 
+ pdf_document:
+  toc: yes
+  keep_tex: yes
+  fig_caption: yes
+  latex_engine: xelatex
+  highlight: pygments
+  number_sections: yes
+header-includes:
+  - \usepackage{xcolor}
+  - \definecolor{mycolor}{HTML}{000000}
+  - \color{mycolor}
+title:
+ $\fontfamily{century}\textbf{Agence Nationale de Statistique et de la Démographie}$ 
+ \begin{center}\textbf{ANSD}\end{center}
+ **------------------------------------------------------------** \newline
+   $\fontfamily{century}\textbf{Ecole Nationale de la Statistique et de l'Analyse Economique}$
+  \begin{center}\textbf{ENSAE Pierre NDIAYE}\end{center}
+  **------------------------------------------------------------** \newline
+  
+  $\fontfamily{century}\selectfont\color{red}\textbf{TP SUR R}$ \newline
+  
+ **------------------------------------------------------------**
+  
+  \begin{flushleft}
+   Rédigé par :\newline
+   Ibrahim Souleymane AMADOU\newline
+   Elève ingénieur statisticien économiste
+   \end{flushleft}
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+\newpage
+# Préliminaires
+
+```{r include=FALSE}
+# installation des packages
+library(readxl)     # Pour l'importation des fichiers Excel
+library(gtsummary)  # Tableaux
+library(naniar)     # Détection / traitement NA
+library(questionr)  # Manip. Bases de donnes
+library(GGally)     # pour les graphiques ggplot
+library(kableExtra) # Tableaux
+library(knitr)      # Tableaux
+library(sp)         # Pour les données spatiales
+library(sf)         # Pour les données spatiales
+library(ggspatial)  # pour les représentations spatiales
+library(marmap)     # Pour afficher le Nord et echelle
+library(mapsf)      # Pour afficher le Nord et echelle
+library(nnet)       # Pour le modele multinomial
+library(tidyverse)  # Dplyr  - ggplot2 - etc.
+tidyverse::tidyverse_packages()
+```
+
+```{r}
+#vider la mémoire
+rm(list=ls())
+#lancer le garbage collector
+gc()
+```
+
+# Partie 1
+
+## Préparation & mise en forme
+
+### Importation et mise en forme
+
+```{r}
+# importation de la base
+Base_Partie_1<-read_excel("F:/ISE/projet_R/data/Base_Partie 1.xlsx")
+
+projet<-Base_Partie_1
+
+# Selection des variables et detection des valeurs manquantes
+projet %>% 
+  select(!key) %>%    # selection des variables mentionnées
+  miss_var_summary(order = T) %>%  # NA par variable
+  kable()
+```
+
+```{r}
+# Verification de NA pour la variable key
+projet %>% 
+  select(key) %>% 
+  miss_var_summary()  #Pas de NA
+```
+
+**Il n' y a pas de NA pour la variable key**
+
+### Creation de variables
+
+```{r}
+# Rename
+projet<-projet %>% 
+          rename(region=q1,departement=q2,sexe=q23)
+
+# Creation de la variable sexe_2
+projet<-projet %>% 
+          mutate(sexe_2=if_else(sexe=="Femme",1,0))
+```
+
+```{r}
+# Creation du dataframe langues
+langues<-projet %>% 
+          select(key,starts_with("q24a_"))
+  
+langues<-langues %>% 
+  mutate(parle=rowSums(langues[-1],na.rm=T)) %>% 
+  select(c("key","parle"))
+
+# Fusion des bases projet et langues
+base_fusion <- merge(projet, langues, by = "key")
+  
+```
+
+## Analyses descriptives
+
+```{r message=FALSE, warning=FALSE}
+# Repartition des PME par sexe
+# Création du graphique avec ggplot2
+ggsexe<-ggplot(projet, aes(x = sexe)) +
+  geom_bar(fill = "gray", width = 0.4) +
+  theme_classic()+
+  labs(title = "Répartition des PME par sexe",
+       x = "Sexe",
+       y = "Nombre de PME") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))
+  #theme(plot.margin = margin(0.5, 0.5, 0.5, 0.5))
+ggsexe
+```
+
+On remarque que les femmes détiennent un nombre plus élevé de petites et moyennes entreprises (PME) que les hommes.
+
+```{r message=FALSE, warning=FALSE}
+# Repartition par le statut juridique
+ggstatut<-ggplot(projet, aes(x = q12)) +
+  geom_bar(fill = "gray", width = 0.6) +
+  theme_classic()+
+  labs(title = "Répartition des PME par le statut juridique",
+       x = "statut juridique",
+       y = "Nombre de PME") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))
+ggstatut
+
+```
+
+
+La grande majorité des PME adoptent la forme juridique de GIE, tandis que seulement un petit nombre choisissent d'être constituées en associations ou en SA.
+
+```{r message=FALSE, warning=FALSE}
+# Repartition par le niveau d'instruction
+ggniv<-ggplot(projet, aes(x = q25)) +
+  geom_bar(fill = "gray", width = 0.6) +
+  theme_classic()+
+  labs(title = "Répartition des PME par le niveau d'instruction",
+       x = "niveau d'instruction",
+       y = "Nombre de PME") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 13, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))
+ggniv
+```
+
+```{r message=FALSE, warning=FALSE}
+# Repartition par le propriétaire/locataire
+gg2<-ggplot(projet, aes(x = q81, fill = q81)) +
+  geom_bar(fill = "gray", width = 0.6) +
+  theme_classic()+
+  labs(title = "Répartition des PME par le propriétaire/locataire",
+       x = "propriétaire/locataire",
+       y = "Nombre de PME") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 13, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))+
+  scale_fill_manual(values = c("#FF9999", "#66CCFF"))
+gg2
+```
+
+```{r message=FALSE, warning=FALSE}
+# Repartition par le statut juridique et le sexe
+data_group<-projet %>% 
+              group_by(q12,sexe) %>%
+              summarize(n_pme=n()) %>% 
+              mutate(percent = n_pme / sum(n_pme) * 100) %>% 
+              ungroup()
+ggcrois1<-ggplot(data_group, aes(x = q12,y = percent, fill = sexe)) +
+  geom_bar(stat = "identity", position = "stack", width = 0.9) +
+  geom_text(aes(label = sprintf("%.1f%%", percent)), position = position_stack(vjust = 0.8), vjust=0.5) +
+  theme_light()+
+  labs(title = "Répartition des PME par Statut Juridique selon le Sexe",
+       x = "Statut Juridique",
+       y = "Pourcentage (%)") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))+
+  scale_fill_manual(values = c("gray", "#66CCFF"))
+ggcrois1
+```
+
+```{r}
+# Repartition par le niveau d’instruction et le sexe
+data_group<-projet %>% 
+              group_by(q25,sexe) %>%
+              summarize(n_pme=n()) %>% 
+              ungroup()
+ggcrois2<-ggplot(data_group, aes(x = q25,y = n_pme, fill = sexe)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.9) +
+  theme_classic()+
+  labs(title = "Répartition des PME par le niveau d'instruction et le Sexe",
+       x = "Niveau d'instruction",
+       y = "Nombre de PME") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 14, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))+
+  scale_fill_manual(values = c("gray", "#66CCFF"))
+ggcrois2
+```
+
+```{r}
+# Repartion par le Propriétaire/locataire suivant le sexe
+data_group<-projet %>% 
+              group_by(q81,sexe) %>%
+              summarize(n_pme=n()) %>% 
+              ungroup()
+ggcrois3<-ggplot(data_group, aes(x = q81,y = n_pme, fill = sexe)) +
+  geom_bar(stat = "identity", position = "dodge", width = 0.9) +
+  theme_classic()+
+  labs(title = "Répartition des PME par Propriétaire/locataire et le Sexe",
+       x = "Propriétaire/locataire",
+       y = "Nombre de PME") +
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 14, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))+
+  scale_fill_manual(values = c("gray", "#66CCFF"))
+ggcrois3
+```
+
+```{r}
+# Stat desc sur les autres variables
+projet %>% 
+  select(!c(key,q25,q81)) %>% 
+  tbl_summary(
+    by = filiere_1,
+    missing = "always",
+    missing_text = "Missing",
+    statistic =list(
+      all_continuous2()~c("{median} ({p25} - {p75}","{mean} ({sd})", "{min} -   {max}"),
+      all_categorical()~"{n}/{N} ({p}%)"
+    ),
+    percent = "column"
+  ) %>% 
+  add_overall() %>% 
+  add_stat_label()
+```
+
+## Un peu de cartograhie
+
+```{r}
+# Transformation en donnees geographiques
+projet_map<-projet
+coordinates(projet_map)<- c("gps_menlongitude", "gps_menlatitude")
+proj4string(projet_map) <- CRS("+proj=longlat +datum=WGS84")
+class(projet_map)
+```
+
+```{r message=FALSE, warning=FALSE}
+senegal <- st_read("F:/ISE/projet_R/data/Limite_des_départements.shp")
+crs<- CRS("+proj=longlat +datum=WGS84")
+sen<-senegal$geometry
+#st_crs(senegal) <- crs
+#ab_dept<-unique(projet$region)
+
+centroids <- st_centroid(senegal)
+centroids<-st_coordinates(centroids$geometry)
+
+plot(sen, col = "lightgray",
+     main = "Répartition spatiale des PME du Sénégal par sexe")
+# Ajouter les points des PME sur la carte en fonction du sexe
+points(projet_map[projet_map$sexe == "Homme",], col = "blue", pch = 16, cex = 1)
+points(projet_map[projet_map$sexe == "Femme",], col = "red", pch = 16, cex = 1)
+# Légendes
+legend("bottomright", legend = c("Homme", "Femme"), col = c("blue", "red"), pch = 16, cex = 1.2)
+# Ajouter le nord
+mf_arrow()
+# Ajouter l'échelle
+mf_scale(pos = "bottomleft", lwd = 5,col = "black")
+
+
+```
+
+```{r message=FALSE, warning=FALSE}
+# une réprésentation spatiale des PME suivant le niveau d’instruction
+plot(sen, col = "lightgray",
+     main = "Répartition spatiale des PME du Sénégal suivant le niveau d'instruction")
+# Ajouter les points des PME sur la carte en fonction du sexe
+points(projet_map[projet_map$q25 == "Aucun niveau",], col = "blue", pch = 16, cex = 1)
+points(projet_map[projet_map$q25 == "Niveau primaire",], col = "red", pch = 16, cex = 1)
+points(projet_map[projet_map$q25 == "Niveau secondaire",], col = "green", pch = 16, cex = 1)
+points(projet_map[projet_map$q25 == "Niveau Superieur",], col = "black", pch = 16, cex = 1)
+# Légendes
+legend("topright", legend = c("Aucun niveau", "Niveau primaire", "Niveau secondaire", "Niveau Superieur"), col = c("blue", "red", "green", "black"), pch = 16, cex = 1)
+# Ajouter le nord
+mf_arrow()
+# Ajouter l'échelle
+mf_scale(pos = "bottomleft", lwd = 5,col = "black")
+
+```
+
+```{r message=FALSE, warning=FALSE}
+plot(sen, col = "lightgray",
+     main = "Répartition spatiale des PME du Sénégal suivant proprietaire/locataire")
+# Ajouter les points des PME sur la carte en fonction du sexe
+points(projet_map[projet_map$q81 == "Propriétaire",], col = "blue", pch = 16, cex = 1)
+points(projet_map[projet_map$q81 == "Locataire",], col = "red", pch = 16, cex = 1)
+# Légendes
+legend("topright", legend = c("Proprietaire", "Locataire"), col = c("blue", "red"), pch = 16, cex = 1.2)
+# Ajouter le nord
+mf_arrow()
+# Ajouter l'échelle
+mf_scale(pos = "bottomleft", lwd = 5,col = "black")
+
+text(centroids, labels = senegal$NOM, col = "black", cex = 0.5)
+```
+
+# Partie 2
+
+## Nettoyage et gestion des données
+
+```{r}
+# Importation
+Base_Partie_2 <- read_excel("F:/ISE/projet_R/data/Base_Partie 2.xlsx")
+projet2<-Base_Partie_2
+# Changement de nom de variable et remplacement des valeurs negatives par NA
+projet2<-projet2 %>% 
+  rename(destination=country_destination) %>% 
+  mutate(destination=if_else(destination<=0,NA,destination))
+```
+
+```{r}
+# Decoupage de la variable age
+projet2<-projet2 %>% 
+  mutate(class_age=cut(age,breaks = seq(0,max(age)+5,by=5)))
+# Creation de la variable nb_entretiens
+projet2<-projet2 %>% 
+  group_by(enumerator) %>% 
+  mutate(nb_entretiens=n()) %>% 
+  ungroup
+# Creation de la variable aleas
+set.seed(111) # Assure la reproductibilité des résultats
+projet2<-projet2 %>% 
+  mutate(aleas=sample(0:1, nrow(projet2), replace = TRUE))
+
+```
+
+```{r}
+# Fusion des bases
+pop<-read_excel("F:/ISE/projet_R/data/Base_Partie 2.xlsx",sheet = 2)
+projet2<-merge(projet2, pop, by = "district") 
+  
+```
+
+```{r}
+# Calcul de la duree de l'entretien et de la duree moyenne
+projet2<-projet2 %>% 
+  mutate(duree=endtime-starttime) %>% 
+  group_by(enumerator) %>% 
+  mutate(duree_moy=mean(duree)) %>% 
+  ungroup
+```
+
+```{r}
+# utilisation de la fonction apply pour renommer les noms de variable
+colnames(projet2) <- apply(projet2, 2, function(col) paste0("endline_", names(projet2)))
+
+```
+
+# Analyse et visualisation des données
+
+```{r}
+# Tableau recapitulatif
+
+projet2 %>% 
+  select(endline_district, endline_age, endline_children_num) %>% 
+  tbl_summary(
+    type = list(endline_children_num ~ "continuous"),
+    statistic = list(all_continuous() ~ "{mean}"),
+    by = endline_district,
+    digits = ~1 
+  ) %>% 
+  modify_header(label = "**District**") %>% 
+  bold_labels()
+```
+
+```{r}
+# Test ANOVA pour la difference entre les 2 groupes
+test <- projet2 %>%
+  select(endline_age, endline_sex) %>% 
+  tbl_summary(
+    by = endline_sex,
+    statistic = list(all_continuous() ~ "{mean}")
+  ) %>% 
+  add_p(~ "t.test") # pvalue>0,05 : Pas de difference significative
+test
+# test avec le test de Student pour la difference de moyenne
+test2 <- projet2 %>%
+  select(endline_age, endline_sex) %>% 
+  tbl_summary(
+    by = endline_sex,
+    statistic = list(all_continuous() ~ "{mean}")
+  ) %>% 
+  add_p(~ "fisher.test") # pvalue>0,05 : Pas de difference significative
+test2
+```
+
+```{r}
+# Nuage de points
+points <- ggplot(projet2, aes(x = endline_age, y = endline_children_num)) +
+  geom_point(size = 1) +  # Définir la taille des points
+  labs(x = "Âge", y = "Nombre d'enfants", title = "Nuage des points entre l'âge et le nombre d'enfants") +
+  theme_bw()+ # Utiliser un thème bw pour le graphique
+  theme(panel.grid = element_blank())+
+  theme(plot.title = element_text(size = 18, hjust = 0.5, vjust = 1),
+        plot.background = element_rect(color = "gray", size = 1))
+points
+```
+
+```{r}
+# Estimation de l’effet d’appartenance au groupe traitement sur l’intention de migrer
+# La variable à expliquer "intention" étant qualitative ordinale, alors on applique le modèle multilinomial
+projet2$endline_intention<-factor(projet2$endline_intention)
+projet2$endline_aleas<-factor(projet2$endline_aleas)
+model_multinomial<-multinom(endline_intention ~ endline_aleas, 
+                          data = projet2
+                          )
+summary(model_multinomial)
+
+```
+
+```{r}
+# Odds ratio
+odds.ratio(model_multinomial)
+```
+
+```{r}
+modele_A<-model_multinomial %>% 
+  tbl_regression()
+
+modele_B<-multinom(endline_intention ~ endline_aleas + endline_age + endline_sex, data = projet2) %>% 
+  tbl_regression()
+
+modele_C<-multinom(endline_intention ~ endline_aleas + endline_age + endline_sex + endline_district, data = projet2) %>% 
+  tbl_regression()
+
+results<-tbl_stack(
+  list(modele_A, modele_B, modele_C),
+  group_header = c("Modèle A : Modèle vide", "Modèle B", "Modele C")
+)
+results
+```
+
+# Partie 3
+
+Voir le code app_shiny.
+Ci - dessous, les paramètres de mon compte grâce auxquels se fait le déploiement sur le net.
+
+```{r message=FALSE, warning=FALSE}
+#library(rsconnect)
+#rsconnect::setAccountInfo(name='amado',
+#                          token='A6C18CD36EE03B9DEC387FAF19FA22E5',
+#                          secret='d6D0NaAPbMmXBZoZm99t9gdH0ztsLMT8AbQQZzGa')
+#rsconnect::deployApp('F:/ISE/projet_R/app_shiny/app_shiny')
+```
